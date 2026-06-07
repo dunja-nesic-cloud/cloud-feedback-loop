@@ -1,0 +1,207 @@
+name: Deploy static site with Discord feedback
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'github-pages'
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build, deploy and notify
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Set start time
+        id: start_time
+        run: echo "START_TIME=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate static site files
+        run: |
+          test -f index.html
+          test -f style.css
+          test -f script.js
+          echo "All required static files exist."
+
+      - name: Collect runner metrics
+        run: |
+          echo "DISK_USAGE=$(df -h / | awk 'NR==2 {print $5}')" >> "$GITHUB_ENV"
+          echo "FREE_MEMORY=$(free -m | awk '/Mem:/ {print $4 " MB"}')" >> "$GITHUB_ENV"
+          echo "COMMIT_SHORT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Check deployed website
+        run: |
+          SITE_URL="${{ steps.deployment.outputs.page_url }}"
+          HTTP_STATUS=$(curl -L -o /dev/null -s -w "%{http_code}" "$SITE_URL")
+          RESPONSE_TIME=$(curl -L -o /dev/null -s -w "%{time_total}" "$SITE_URL")
+
+          echo "SITE_URL=$SITE_URL" >> "$GITHUB_ENV"
+          echo "HTTP_STATUS=$HTTP_STATUS" >> "$GITHUB_ENV"
+          echo "RESPONSE_TIME=$RESPONSE_TIME" >> "$GITHUB_ENV"
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 400 ]; then
+            echo "Website health check failed with status $HTTP_STATUS"
+            exit 1
+          fi
+
+      - name: Calculate duration
+        if: always()
+        run: |
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo "DURATION=${DURATION}s" >> "$GITHUB_ENV"
+
+      - name: Send success notification to Discord
+        if: success()
+        run: |
+          LOG_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{
+              \"username\": \"GitHub Actions Deploy Bot\",
+              \"embeds\": [
+                {
+                  \"title\": \"Deployment uspešan\",
+                  \"description\": \"Statički sajt je uspešno deploy-ovan na GitHub Pages.\",
+                  \"color\": 3066993,
+                  \"fields\": [
+                    {
+                      \"name\": \"Repozitorijum\",
+                      \"value\": \"${{ github.repository }}\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Branch\",
+                      \"value\": \"${{ github.ref_name }}\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Autor\",
+                      \"value\": \"${{ github.actor }}\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Commit\",
+                      \"value\": \"$COMMIT_SHORT\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"HTTP status\",
+                      \"value\": \"$HTTP_STATUS\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Response time\",
+                      \"value\": \"${RESPONSE_TIME}s\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Disk usage runner-a\",
+                      \"value\": \"$DISK_USAGE\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Slobodna memorija runner-a\",
+                      \"value\": \"$FREE_MEMORY\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Trajanje pipeline-a\",
+                      \"value\": \"$DURATION\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Sajt\",
+                      \"value\": \"[Otvori sajt]($SITE_URL)\",
+                      \"inline\": false
+                    },
+                    {
+                      \"name\": \"Logovi\",
+                      \"value\": \"[Otvori GitHub Actions logove]($LOG_URL)\",
+                      \"inline\": false
+                    }
+                  ]
+                }
+              ]
+            }" \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+
+      - name: Send failure notification to Discord
+        if: failure()
+        run: |
+          LOG_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{
+              \"username\": \"GitHub Actions Deploy Bot\",
+              \"embeds\": [
+                {
+                  \"title\": \"Deployment neuspešan\",
+                  \"description\": \"Pipeline je završen neuspešno. Potrebno je proveriti GitHub Actions logove.\",
+                  \"color\": 15158332,
+                  \"fields\": [
+                    {
+                      \"name\": \"Repozitorijum\",
+                      \"value\": \"${{ github.repository }}\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Branch\",
+                      \"value\": \"${{ github.ref_name }}\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Autor\",
+                      \"value\": \"${{ github.actor }}\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Commit\",
+                      \"value\": \"${GITHUB_SHA::7}\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Trajanje do greške\",
+                      \"value\": \"$DURATION\",
+                      \"inline\": true
+                    },
+                    {
+                      \"name\": \"Logovi\",
+                      \"value\": \"[Otvori GitHub Actions logove]($LOG_URL)\",
+                      \"inline\": false
+                    }
+                  ]
+                }
+              ]
+            }" \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
