@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="sr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cloud Feedback Loop</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="hero">
+        <p class="badge">Cloud projekat</p>
+        <h1>Monitoring i automatizovani feedback loop</h1>
+        <p>
+          Ovaj statički HTML sajt koristi se kao primer aplikacije koja se
+          automatski deploy-uje preko GitHub Pages servisa, dok GitHub Actions
+          šalje obaveštenja o statusu deployment-a u Discord kanal.
+        </p>
+
+        <div class="cards">
+          <article>
+            <h2>CI/CD</h2>
+            <p>Automatsko pokretanje pipeline-a nakon izmene koda.</p>
+          </article>
+
+          <article>
+            <h2>Monitoring</h2>
+            <p>
+              Provera dostupnosti sajta i osnovnih metrika nakon deployment-a.
+            </p>
+          </article>
+
+          <article>
+            <h2>Discord feedback</h2>
+            <p>Slanje uspešnih i neuspešnih deployment notifikacija timu.</p>
+          </article>
+        </div>
+
+        <button id="statusButton">Prikaži status projekta</button>
+        <p id="statusText"></p>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
